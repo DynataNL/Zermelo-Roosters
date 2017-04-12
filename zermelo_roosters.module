@@ -1,0 +1,296 @@
+<?php
+/**
+* @file
+* Deze module is bedoeld om roosters en roosterwijzigingen uit de Zermelo Portal weer te geven in Drupal
+* Deze module werd ontwikkeld door Dynata (http://dynata.nl/)
+*/
+
+/**
+* Settings form
+* Page callback: Zermelo Roosters settings
+* Implements hook_menu()
+*/
+
+function zermelo_roosters_menu() {
+    $items = array();
+
+    $items['admin/config/services/zermelo_roosters'] = array(
+        'title' => 'Zermelo Roosters',
+        'description' => 'Configuratie voor de Zermelo Roosters module',
+        'page callback' => 'drupal_get_form',
+        'page arguments' => array('zermelo_roosters_form'),
+        'access arguments' => array('access administration pages'),
+        'type' => MENU_NORMAL_ITEM,
+    );
+
+    return $items;
+}
+
+function zermelo_roosters_form($form, &$form_state) {
+    $form['zermelo_roosters_portal_url'] = array(
+        '#type' => 'textfield',
+        '#title' => t('Zermelo Portal URL'),
+        '#default_value' => variable_get('zermelo_roosters_portal_url', '[school]'),
+        '#size' => 30,
+        '#maxlength' => 40,
+        '#description' => 'De URL van de Zermelo Portal van uw school ziet er als volgt uit: https://[school].zportal.nl/~. Vul in het bovenstaande veld het [school] deel in.',
+        '#required' => TRUE,
+    );
+    $form['zermelo_roosters_API_key'] = array(
+        '#type' => 'textfield',
+        '#title' => t('Zermelo API-key'),
+        '#default_value' => variable_get('zermelo_roosters_API_key', 'ABCD1234'),
+        '#size' => 30,
+        '#maxlength' => 40,
+        '#description' => 'De API-key om data uit de Zermelo Portal te laden.',
+        '#required' => TRUE,
+    );
+    $form['zermelo_roosters_roosterwijzigingen_dagen_leerlingen'] = array(
+        '#type' => 'select',
+        '#title' => t('Roosterwijzigingen voor X aantal dagen laten zien aan leerlingen'),
+        '#options' => array(
+            1 => t('1'),
+            2 => t('2'),
+            3 => t('3'),
+            4 => t('4'),
+            5 => t('5'),
+        ),
+        '#default_value' => variable_get('zermelo_roosters_roosterwijzigingen_dagen_leerlingen', 2),
+        '#description' => 'Met dit veld kunt u instellen voor hoeveel schooldagen in het roosterwijzigingen block roosterwijzigingen weergegeven moeten worden. Bij 1 wordt alleen de huidige (, of in het weekend, eerst volgende schooldag) weergegeven, bij 2 de huidige (, of in het weekend, eerst volgende schooldag) en daaropvolgende schooldag etc.',
+        '#required' => TRUE,
+    );
+    $form['zermelo_roosters_roosterwijzigingen_dagen_docenten'] = array(
+        '#type' => 'select',
+        '#title' => t('Roosterwijzigingen voor X aantal dagen laten zien aan docenten'),
+        '#options' => array(
+            1 => t('1'),
+            2 => t('2'),
+            3 => t('3'),
+            4 => t('4'),
+            5 => t('5'),
+        ),
+        '#default_value' => variable_get('zermelo_roosters_roosterwijzigingen_dagen_docenten', 2),
+        '#description' => 'Met dit veld kunt u instellen voor hoeveel schooldagen in het roosterwijzigingen block roosterwijzigingen weergegeven moeten worden. Bij 1 wordt alleen de huidige (, of in het weekend, eerst volgende schooldag) weergegeven, bij 2 de huidige (, of in het weekend, eerst volgende schooldag) en daaropvolgende schooldag etc.',
+        '#required' => TRUE,
+    );
+    $form['zermelo_roosters_student_role'] = array(
+        '#type' => 'select',
+        '#multiple' => FALSE,
+        '#title' => t('Leerlingen rol'),
+        '#description' => 'De rol/groep waar leerlingen deel van uitmaken.',
+        '#options' => user_roles(),
+        '#default_value' => variable_get('zermelo_roosters_student_role'),
+        '#required' => TRUE,
+    );
+    $form['zermelo_roosters_tutor_role'] = array(
+        '#type' => 'select',
+        '#multiple' => FALSE,
+        '#title' => t('Leraren rol'),
+        '#description' => 'De rol/groep waar leraren deel van uitmaken.',
+        '#options' => user_roles(),
+        '#default_value' => variable_get('zermelo_roosters_tutor_role'),
+        '#required' => TRUE,
+    );
+    $form['zermelo_roosters_author'] = array(
+        '#markup' => '<p>Deze module is ontwikkeld door Dynata. Voor meer informatie of vragen over de module verwijzen wij u door naar <a style="color: #555 !important; text-decoration: none;" href="https://github.com/DynataNL/Zermelo-Roosters" target="_blank">GitHub</a>.</p>'
+    );
+
+    return system_settings_form($form);
+}
+
+/**
+* Block definitions
+* Implements hook_block_info()
+*/
+
+function zermelo_roosters_block_info() {
+    $blocks = array();
+
+    $blocks['roosterwijzigingen'] = array(
+        'info' => t('Zermelo Roosters Roosterwijzigingen'),
+        'status' => TRUE,
+        'region' => 'sidebar_first',
+    );
+
+    return $blocks;
+}
+
+/**
+* Data handling functions
+*/
+
+function zermelo_roosters_get_uid($zr_email) {
+    //GET Parameters voor http request
+    $query = array(
+        'access_token' => variable_get('zermelo_roosters_API_key'),
+        'email' => $zr_email,
+    );
+
+    //Request URL
+    $zr_portal_url = 'https://' . variable_get('zermelo_roosters_portal_url') . '.zportal.nl/api/v2/users';
+    
+    //Query + json_decode van data
+    $zr_data = json_decode(drupal_http_request($zr_portal_url . '?' .drupal_http_build_query($query))->data);
+
+    //Verwerking van data
+    if($zr_data->response->status != 200) {
+        drupal_set_message(t('Er kon geen data worden opgehaald vanuit de Zermelo portal.'), 'error');
+        return 'error';
+    } else {
+        if($zr_data->response->totalRows != 1) {
+            drupal_set_message(t('Voor het huidige account kon geen informatie in de Zermelo portal gevonden worden.'), 'warning');
+            return 'error';
+        } else {
+            return $zr_data->response->data[0]->code;
+        }
+    }
+}
+
+function zermelo_roosters_get_roosterwijzigingen($zr_code, $zr_start, $zr_end) {
+    //Ophalen roosterwijzigingen
+    //GET Parameters voor http request
+    $query = array(
+        'access_token' => variable_get('zermelo_roosters_API_key'),
+        'modified' => 'true',
+        'valid' => 'true',
+        'start' => $zr_start,
+        'end' => $zr_end,
+        'user' => $zr_code,
+    );
+
+    //Request URL
+    $zr_portal_url = 'https://' . variable_get('zermelo_roosters_portal_url') . '.zportal.nl/api/v2/appointments';
+    
+    //Uitvoeren query + json_decode van data
+    $zr_roosterwijzigingen = json_decode(drupal_http_request($zr_portal_url . '?' . drupal_http_build_query($query))->data);
+
+    //Ophalen nieuwe lessen
+    //GET Parameters voor http request
+    $query = array(
+        'access_token' => variable_get('zermelo_roosters_API_key'),
+        'new' => 'true',
+        'valid' => 'true',
+        'start' => $zr_start,
+        'end' => $zr_end,
+        'user' => $zr_code,
+    );
+    
+    //Uitvoeren query + json_decode van data
+    $zr_extralessen = json_decode(drupal_http_request($zr_portal_url . '?' . drupal_http_build_query($query))->data)->response->data;
+
+    //Samenvoegen van nieuwe lessen en wijzigingen
+    $zr_roosterwijzigingen->response->data = array_merge($zr_roosterwijzigingen->response->data, $zr_extralessen);
+
+    return $zr_roosterwijzigingen;
+}
+
+function zermelo_roosters_build_roosterwijzigingen($zr_code) {
+    date_default_timezone_set('Europe/Amsterdam');
+    $zermelo_roosters_roosterwijzigingen_display = '';
+
+    //Berekenen begin van vandaag
+    $zr_start = strtotime('today midnight');
+    $zr_end;
+
+    //Bepalen van maximaal weer te geven dagen
+    if(user_has_role(variable_get('zermelo_roosters_tutor_role'))) {
+        $maxdagen = variable_get('zermelo_roosters_roosterwijzigingen_dagen_docenten');
+    } elseif(user_has_role(variable_get('zermelo_roosters_student_role'))) {
+        $maxdagen = variable_get('zermelo_roosters_roosterwijzigingen_dagen_leerlingen');
+    }
+
+    //Berekenen dagen die weergegeven moeten worden
+    for ($i = 1; $i <= $maxdagen; $i++) {
+        //Berekenen timestamps begin en eind
+        if (date('N', $zr_start) >= 6) {
+            $zr_start = strtotime('next monday', $zr_start);
+        }
+        $zr_end = strtotime('+1 day', $zr_start);
+
+        //Ophalen van data uit Zermelo
+        $zr_data = zermelo_roosters_get_roosterwijzigingen($zr_code, $zr_start, $zr_end);
+
+        //Opbouwen van weergave van data uit Zermelo
+        if($zr_data->response->status != 200) { //Zermelo is niet bereikbaar
+            drupal_set_message(t('Er kon geen data worden opgehaald vanuit de Zermelo portal.'), 'error');
+            $zermelo_roosters_roosterwijzigingen_display = t('Er ging iets mis!');
+            return $zermelo_roosters_roosterwijzigingen_display;
+        } else { //Zermelo bereikbaar
+            //Opbouwen van kopje voor deze dag
+            if(date('Ymd', strtotime('today midnight')) == date('Ymd', $zr_start)) {
+                $tableheader = array(t('Vandaag (') . format_date($zr_start, 'custom', 'l j F', NULL, 'nl') . t(')'));
+            } elseif(date('Ymd', strtotime('tomorrow midnight')) == date('Ymd', $zr_start)) {
+                $tableheader = array(t('Morgen (') . format_date($zr_start, 'custom', 'l j F', NULL, 'nl') . t(')'));
+            } else {
+                $tableheader = array(ucfirst(format_date($zr_start, 'custom', 'l j F', NULL, 'nl')));
+            }
+
+            if($zr_data->response->totalRows == 0) { //Voor deze dag zijn er geen wijzigingen
+                //Opbouwen tekst voor deze dag
+                $tablerows = array(array(t('Er zijn voor deze dag geen wijzigingen.')));
+            } else { //Voor deze dag zijn er wijzigingen
+                //Krijg het dataveld voor de wijzigingen
+                $zr_data_wijzigingen = $zr_data->response->data;
+
+                //Sorteer wijzigingen op begintijd van laag naar hoog
+                usort($zr_data_wijzigingen, function($a, $b) {
+                    return $a->start - $b->start;
+                });
+
+                //Selecteren van informatie uit het dataveld voor de wijzigingen en deze toevoegen aan de tablerows
+                $tablerows = array();
+
+                foreach ($zr_data_wijzigingen as $zr_wijziging) {
+                    if(user_has_role(variable_get('zermelo_roosters_tutor_role'))) {
+                        $docentklas = ' aan ' . implode(' en ', $zr_wijziging->groups);
+                    } elseif(user_has_role(variable_get('zermelo_roosters_student_role'))) {
+                        $docentklas = ' van ' . implode(' en ', $zr_wijziging->teachers);
+                    }
+
+                    if($zr_wijziging->cancelled == 1) {
+                        $tablerow = array(t('Het ' . $zr_wijziging->startTimeSlot . 'e uur ' . implode(' en ', $zr_wijziging->subjects) . $docentklas . ' valt uit.'));
+                    } elseif($zr_wijziging->moved == 1) {
+                        $tablerow = array(t('De les ' . implode(' en ', $zr_wijziging->subjects) . $docentklas . ' vindt nu het ' . $zr_wijziging->startTimeSlot . 'e uur plaats in ' . implode(' en ', $zr_wijziging->locations) . '.'));
+                    } elseif($zr_wijziging->new == 1) {
+                        $tablerow = array(t('Er is het ' . $zr_wijziging->startTimeSlot . 'e uur een extra les ' . implode(' en ', $zr_wijziging->subjects) . $docentklas . ' toegevoegd in lokaal ' . implode(' en ', $zr_wijziging->locations) . '.'));
+                    } else {
+                        $tablerow = array(t('Het ' . $zr_wijziging->startTimeSlot . 'e uur ' . implode(' en ', $zr_wijziging->subjects) . $docentklas . ' in ' . implode(' en ', $zr_wijziging->locations) . '<br>' . $zr_wijziging->changeDescription));
+                    }
+                    array_push($tablerows, $tablerow);
+                }
+            }
+            //Opbouwen van tabel voor deze dag en deze toevoegen aan de display
+            $zermelo_roosters_roosterwijzigingen_display .= theme('table', array('header' => $tableheader, 'rows' => $tablerows));
+        }
+        //Instellen van start voor volgende dag
+        $zr_start = $zr_end;
+    }
+    //Toevoegen Powered By text
+    $zermelo_roosters_roosterwijzigingen_display .= '<p style="text-align: center; color: #555 !important; font-size: 10px;">Powered by <a style="color: #555 !important; text-decoration: none;" href="http://dynata.nl/">Dynata</a></p>';
+    //Returnen van display
+    return $zermelo_roosters_roosterwijzigingen_display;
+}
+
+/**
+* Blocks content generation
+*/
+
+function zermelo_roosters_block_view($delta = '') {
+    if(user_is_logged_in() AND user_has_role(variable_get('zermelo_roosters_student_role')) || user_has_role(variable_get('zermelo_roosters_tutor_role'))) { //user logged in and student or tutor
+        global $user;
+        $drupal_usermail = strtolower($user->mail);
+        switch($delta) {
+            case 'roosterwijzigingen':
+                if(zermelo_roosters_get_uid($drupal_usermail) != 'error') {
+                    $block['subject'] = t('Roosterwijzigingen');
+                    if(user_access('access content')) {
+                        $block['content'] = zermelo_roosters_build_roosterwijzigingen(zermelo_roosters_get_uid($drupal_usermail));
+                    }
+                    return $block;
+                } else {
+                    return;
+                }
+                break;
+        }
+    }
+}

@@ -1,0 +1,5 @@
+name = Zermelo Roosters
+description = Drupal module voor het weergeven van informatie uit de Zermelo Portal. Voor meer informatie zie https://github.com/DynataNL/Zermelo-Roosters of http://dynata.nl/
+core = 7.x
+
+configure = admin/config/services/zermelo_roosters
