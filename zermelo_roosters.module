@@ -227,7 +227,7 @@ function zermelo_roosters_build_roosterwijzigingen($zr_code) {
 
             if($zr_data->response->totalRows == 0) { //Voor deze dag zijn er geen wijzigingen
                 //Opbouwen tekst voor deze dag
-                $tablerows = array(array(t('Er zijn voor deze dag geen wijzigingen.')));
+                $tablerows = array(array(t('Er zijn voor jou op deze dag geen wijzigingen.')));
             } else { //Voor deze dag zijn er wijzigingen
                 //Krijg het dataveld voor de wijzigingen
                 $zr_data_wijzigingen = $zr_data->response->data;
@@ -282,7 +282,7 @@ function zermelo_roosters_block_view($delta = '') {
         switch($delta) {
             case 'roosterwijzigingen':
                 if(zermelo_roosters_get_uid($drupal_usermail) != 'error') {
-                    $block['subject'] = t('Roosterwijzigingen');
+                    $block['subject'] = t('Jouw leswijzigingen');
                     if(user_access('access content')) {
                         $block['content'] = zermelo_roosters_build_roosterwijzigingen(zermelo_roosters_get_uid($drupal_usermail));
                     }
